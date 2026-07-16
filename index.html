@@ -148,10 +148,21 @@
 
   function pad(n) { return n.toString().padStart(2, '0'); }
 
-  function nowString() {
+  // Czytelna postac, tylko do wyswietlenia uzytkownikowi.
+  function nowStringPretty() {
     const d = new Date();
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
            `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  // To faktycznie idzie przez BLE: 12 cyfr "RRMMDDGGMMSS", bez separatorow.
+  // ESP32 ma udokumentowany blad biblioteki BLE - getValue()/c_str()
+  // koruptuje pamiec dla wartosci dluzszych niz ok. 15 bajtow, a pelne
+  // "2026-07-16 22:07:57" (19 bajtow) powodowalo restart urzadzenia.
+  function nowStringCompact() {
+    const d = new Date();
+    return `${pad(d.getFullYear() % 100)}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
+           `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
 
   function tickClock() {
@@ -189,15 +200,15 @@
       // Za "sukces" uznajemy wiec to, ze zapis dotarl bez bledu - ostateczne
       // potwierdzenie widac na ekranie samego Cardputera.
       setStatus('Wysylanie czasu...');
-      const payload = nowString();
-      const data = new TextEncoder().encode(payload);
+      const displayTime = nowStringPretty();
+      const data = new TextEncoder().encode(nowStringCompact());
       if (characteristic.writeValueWithResponse) {
         await characteristic.writeValueWithResponse(data);
       } else {
         await characteristic.writeValue(data);
       }
 
-      setStatus('Wyslano!\n' + payload + '\nSprawdz na ekranie Cardputera, czy czas sie zaktualizowal.', 'ok');
+      setStatus('Wyslano!\n' + displayTime + '\nSprawdz na ekranie Cardputera, czy czas sie zaktualizowal.', 'ok');
       device.gatt.disconnect();
     } catch (err) {
       setStatus('Nie udało się zsynchronizować:\n' + err.message, 'bad');
