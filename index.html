@@ -184,10 +184,37 @@
       const service = await server.getPrimaryService(SERVICE_UUID);
       const characteristic = await service.getCharacteristic(TIME_CHAR_UUID);
 
-      const payload = nowString();
-      await characteristic.writeValue(new TextEncoder().encode(payload));
+      // Samo wysłanie danych przez Bluetooth nie znaczy, że urządzenie je
+      // poprawnie odebrało i przetworzyło - czekamy więc na jawne
+      // potwierdzenie (notify) z Cardputera, zamiast zakładać sukces.
+      const ackPromise = new Promise((resolve) => {
+        characteristic.addEventListener('characteristicvaluechanged', (e) => {
+          resolve(new TextDecoder().decode(e.target.value));
+        });
+      });
+      await characteristic.startNotifications();
 
-      setStatus('Zsynchronizowano!\n' + payload, 'ok');
+      setStatus('Wysylanie czasu...');
+      const payload = nowString();
+      const data = new TextEncoder().encode(payload);
+      if (characteristic.writeValueWithResponse) {
+        await characteristic.writeValueWithResponse(data);
+      } else {
+        await characteristic.writeValue(data);
+      }
+
+      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 4000));
+      const ack = await Promise.race([ackPromise, timeoutPromise]);
+
+      if (ack === 'OK') {
+        setStatus('Zsynchronizowano!\n' + payload, 'ok');
+      } else if (ack === 'TIMEOUT') {
+        setStatus('Wyslano, ale urzadzenie nie potwierdzilo odbioru.\n' +
+                   'Sprawdz czas na ekranie Cardputera i sprobuj ponownie.', 'bad');
+      } else {
+        setStatus('Urzadzenie zglosilo blad przy zapisie czasu.\nSprobuj ponownie.', 'bad');
+      }
+
       device.gatt.disconnect();
     } catch (err) {
       setStatus('Nie udało się zsynchronizować:\n' + err.message, 'bad');
