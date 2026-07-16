@@ -184,10 +184,10 @@
       const service = await server.getPrimaryService(SERVICE_UUID);
       const characteristic = await service.getCharacteristic(TIME_CHAR_UUID);
 
-      // Samo wysłanie danych przez Bluetooth nie znaczy, że urządzenie je
-      // poprawnie odebrało i przetworzyło - po zapisie odczytujemy więc
-      // wartość charakterystyki z powrotem (zwykły odczyt GATT), żeby
-      // sprawdzić potwierdzenie "OK"/"ERR" ustawione przez Cardputera.
+      // Cardputer nie odsyla zadnego potwierdzenia przez BLE (proba wysylania
+      // zwrotnej wartosci powodowala uszkodzenie pamieci na urzadzeniu).
+      // Za "sukces" uznajemy wiec to, ze zapis dotarl bez bledu - ostateczne
+      // potwierdzenie widac na ekranie samego Cardputera.
       setStatus('Wysylanie czasu...');
       const payload = nowString();
       const data = new TextEncoder().encode(payload);
@@ -197,20 +197,7 @@
         await characteristic.writeValue(data);
       }
 
-      // krotka chwila, zeby Cardputer zdazyl przetworzyc zapis i ustawic odpowiedz
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      const ackValue = await characteristic.readValue();
-      const ack = new TextDecoder().decode(ackValue);
-
-      if (ack === 'OK') {
-        setStatus('Zsynchronizowano!\n' + payload, 'ok');
-      } else if (ack === 'ERR') {
-        setStatus('Urzadzenie zglosilo blad przy zapisie czasu.\nSprobuj ponownie.', 'bad');
-      } else {
-        setStatus('Wyslano, ale urzadzenie nie potwierdzilo odbioru\n' +
-                   '(odpowiedz: "' + ack + '"). Sprawdz czas na ekranie Cardputera.', 'bad');
-      }
-
+      setStatus('Wyslano!\n' + payload + '\nSprawdz na ekranie Cardputera, czy czas sie zaktualizowal.', 'ok');
       device.gatt.disconnect();
     } catch (err) {
       setStatus('Nie udało się zsynchronizować:\n' + err.message, 'bad');
