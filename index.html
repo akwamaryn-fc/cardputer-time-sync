@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Synchronizacja czasu - Cardputer</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --bg-glow: #101826;
+    --panel: #131a24;
+    --accent: #00e5ff;
+    --accent-dim: #0891a8;
+    --text: #ffffff;
+    --text-dim: #8899a6;
+    --divider: rgba(255,255,255,0.08);
+    --ok: #22c55e;
+    --bad: #ef4444;
+    --btn-ink: #001318;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #eef1f5;
+      --bg-glow: #ffffff;
+      --panel: #ffffff;
+      --accent: #0891a8;
+      --accent-dim: #00c2dd;
+      --text: #10161f;
+      --text-dim: #5b6976;
+      --divider: rgba(16,22,31,0.08);
+      --ok: #15803d;
+      --bad: #dc2626;
+      --btn-ink: #ffffff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0e14; --bg-glow: #101826; --panel: #131a24; --accent: #00e5ff;
+    --accent-dim: #0891a8; --text: #ffffff; --text-dim: #8899a6;
+    --divider: rgba(255,255,255,0.08); --ok: #22c55e; --bad: #ef4444; --btn-ink: #001318;
+  }
+  :root[data-theme="light"] {
+    --bg: #eef1f5; --bg-glow: #ffffff; --panel: #ffffff; --accent: #0891a8;
+    --accent-dim: #00c2dd; --text: #10161f; --text-dim: #5b6976;
+    --divider: rgba(16,22,31,0.08); --ok: #15803d; --bad: #dc2626; --btn-ink: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at top, var(--bg-glow) 0%, var(--bg) 70%);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border-radius: 20px;
+    padding: 28px 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    text-align: center;
+  }
+  h1 {
+    font-size: 1.25rem;
+    margin: 0 0 4px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+  .clock {
+    font-size: 2.1rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    margin: 12px 0 24px;
+    letter-spacing: 1px;
+  }
+  button#syncBtn {
+    width: 100%;
+    padding: 16px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+    color: var(--btn-ink);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+  }
+  button#syncBtn:active { transform: scale(0.97); }
+  button#syncBtn:disabled { opacity: 0.5; }
+  button#syncBtn:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+  }
+  #status {
+    margin-top: 18px;
+    min-height: 44px;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    white-space: pre-line;
+  }
+  #status.ok { color: var(--ok); }
+  #status.bad { color: var(--bad); }
+  .hint {
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid var(--divider);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+    text-align: left;
+  }
+  .hint b { color: var(--text); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>CARDPUTER &middot; BioLogger</h1>
+    <div class="subtitle">Synchronizacja zegara przez Bluetooth</div>
+    <div class="clock" id="clock">--:--:--</div>
+    <button id="syncBtn">Synchronizuj czas</button>
+    <div id="status">Nacisnij przycisk, aby wyslac aktualny czas telefonu do urzadzenia.</div>
+    <div class="hint">
+      <b>Zanim naciśniesz:</b><br>
+      1. Włącz Bluetooth w telefonie.<br>
+      2. Na Cardputerze wybierz w menu <b>„Synchronizuj czas (BLE)”</b>.<br>
+      3. Wybierz z listy urządzenie <b>CardputerBioLogger</b>.<br><br>
+      Strona wysyła tylko bieżącą datę/godzinę telefonu - nic więcej.
+      Działa w przeglądarce Chrome na Androidzie (Web Bluetooth).
+    </div>
+  </div>
+
+<script>
+  const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const TIME_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+
+  const btn = document.getElementById('syncBtn');
+  const statusEl = document.getElementById('status');
+  const clockEl = document.getElementById('clock');
+
+  function pad(n) { return n.toString().padStart(2, '0'); }
+
+  function nowString() {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+           `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function tickClock() {
+    const d = new Date();
+    clockEl.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  setInterval(tickClock, 1000);
+  tickClock();
+
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = cls || '';
+  }
+
+  async function syncTime() {
+    if (!navigator.bluetooth) {
+      setStatus('Ta przeglądarka nie obsługuje Web Bluetooth.\nUżyj Chrome na Androidzie.', 'bad');
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      setStatus('Szukam urządzenia CardputerBioLogger...');
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+      });
+
+      setStatus('Łączenie...');
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const characteristic = await service.getCharacteristic(TIME_CHAR_UUID);
+
+      const payload = nowString();
+      await characteristic.writeValue(new TextEncoder().encode(payload));
+
+      setStatus('Zsynchronizowano!\n' + payload, 'ok');
+      device.gatt.disconnect();
+    } catch (err) {
+      setStatus('Nie udało się zsynchronizować:\n' + err.message, 'bad');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', syncTime);
+</script>
+</body>
+</html>
