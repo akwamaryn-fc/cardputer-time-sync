@@ -185,15 +185,9 @@
       const characteristic = await service.getCharacteristic(TIME_CHAR_UUID);
 
       // Samo wysłanie danych przez Bluetooth nie znaczy, że urządzenie je
-      // poprawnie odebrało i przetworzyło - czekamy więc na jawne
-      // potwierdzenie (notify) z Cardputera, zamiast zakładać sukces.
-      const ackPromise = new Promise((resolve) => {
-        characteristic.addEventListener('characteristicvaluechanged', (e) => {
-          resolve(new TextDecoder().decode(e.target.value));
-        });
-      });
-      await characteristic.startNotifications();
-
+      // poprawnie odebrało i przetworzyło - po zapisie odczytujemy więc
+      // wartość charakterystyki z powrotem (zwykły odczyt GATT), żeby
+      // sprawdzić potwierdzenie "OK"/"ERR" ustawione przez Cardputera.
       setStatus('Wysylanie czasu...');
       const payload = nowString();
       const data = new TextEncoder().encode(payload);
@@ -203,16 +197,18 @@
         await characteristic.writeValue(data);
       }
 
-      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 4000));
-      const ack = await Promise.race([ackPromise, timeoutPromise]);
+      // krotka chwila, zeby Cardputer zdazyl przetworzyc zapis i ustawic odpowiedz
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const ackValue = await characteristic.readValue();
+      const ack = new TextDecoder().decode(ackValue);
 
       if (ack === 'OK') {
         setStatus('Zsynchronizowano!\n' + payload, 'ok');
-      } else if (ack === 'TIMEOUT') {
-        setStatus('Wyslano, ale urzadzenie nie potwierdzilo odbioru.\n' +
-                   'Sprawdz czas na ekranie Cardputera i sprobuj ponownie.', 'bad');
-      } else {
+      } else if (ack === 'ERR') {
         setStatus('Urzadzenie zglosilo blad przy zapisie czasu.\nSprobuj ponownie.', 'bad');
+      } else {
+        setStatus('Wyslano, ale urzadzenie nie potwierdzilo odbioru\n' +
+                   '(odpowiedz: "' + ack + '"). Sprawdz czas na ekranie Cardputera.', 'bad');
       }
 
       device.gatt.disconnect();
