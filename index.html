@@ -241,6 +241,17 @@
       <option value="1800">30 minut</option>
       <option value="3600">60 minut</option>
     </select>
+    <label class="field" for="durationSelect">Czas trwania sesji</label>
+    <select id="durationSelect">
+      <option value="0" selected>Bez limitu</option>
+      <option value="900">15 minut</option>
+      <option value="1800">30 minut</option>
+      <option value="3600">1 godzina</option>
+      <option value="7200">2 godziny</option>
+      <option value="14400">4 godziny</option>
+      <option value="28800">8 godzin</option>
+      <option value="86400">24 godziny</option>
+    </select>
     <div class="btn-row" style="margin-top:18px;">
       <button class="btn-secondary" id="startModalCancel">Anuluj</button>
       <button class="btn-primary" id="startModalConfirm">Start</button>
@@ -372,8 +383,12 @@
   //  Live status (odczyt binarny, 18 bajtow) + wykresy
   // ------------------------------------------------------------------
 
+  const SESSION_NO_LIMIT = 0xFFFFFFFF;
+  let sessionActive = false;
+  let sessionIntervalS = 0;
+
   function onStatus(dataView) {
-    if (!dataView || dataView.byteLength < 18) return;
+    if (!dataView || dataView.byteLength < 22) return;
     const temp = dataView.getInt16(4, true) / 10;
     const hum = dataView.getUint16(6, true) / 10;
     const minTemp = dataView.getInt16(8, true) / 10;
@@ -381,6 +396,7 @@
     const minHum = dataView.getUint16(12, true) / 10;
     const maxHum = dataView.getUint16(14, true) / 10;
     const battery = dataView.getUint8(16);
+    const remaining = dataView.getUint32(18, true);
 
     el('tileTemp').textContent = temp.toFixed(1);
     el('tileHum').textContent = Math.round(hum) + '%';
@@ -389,6 +405,8 @@
     el('mmHum').textContent = `${Math.round(minHum)} / ${Math.round(maxHum)}%`;
     el('chartTempNow').textContent = temp.toFixed(1) + ' st.C';
     el('chartHumNow').textContent = Math.round(hum) + '%';
+
+    updateSessionMeta(remaining);
 
     tempPoints.push(temp);
     humPoints.push(hum);
@@ -404,20 +422,39 @@
     const text = new TextDecoder().decode(dataView);
     if (text && text.indexOf('|') >= 0) {
       const [name, interval] = text.split('|');
+      sessionActive = true;
+      sessionIntervalS = parseInt(interval, 10);
       el('sessionActiveBlock').classList.remove('hidden');
       el('sessionEmptyBlock').classList.add('hidden');
       el('sessionName').textContent = name;
-      el('sessionMeta').textContent = 'co ' + formatInterval(parseInt(interval, 10));
+      updateSessionMeta(SESSION_NO_LIMIT);
     } else {
+      sessionActive = false;
       el('sessionActiveBlock').classList.add('hidden');
       el('sessionEmptyBlock').classList.remove('hidden');
     }
+  }
+
+  function updateSessionMeta(remainingSec) {
+    if (!sessionActive) return;
+    let txt = 'co ' + formatInterval(sessionIntervalS);
+    txt += remainingSec === SESSION_NO_LIMIT
+      ? '  -  bez limitu'
+      : '  -  pozostalo ' + formatDuration(remainingSec);
+    el('sessionMeta').textContent = txt;
   }
 
   function formatInterval(s) {
     if (s < 60) return s + ' s';
     if (s < 3600) return Math.round(s / 60) + ' min';
     return Math.round(s / 3600) + ' h';
+  }
+
+  function formatDuration(s) {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return `${h}godz ${m}min`;
+    return `${m}min`;
   }
 
   function getAccentColor() {
@@ -507,9 +544,10 @@
   el('startModalConfirm').addEventListener('click', async () => {
     const name = el('sessionNameInput').value.trim() || defaultSessionName();
     const interval = el('intervalSelect').value;
+    const duration = el('durationSelect').value;
     el('startModalBackdrop').classList.add('hidden');
     try {
-      await sendControl(`START|${name}|${interval}`);
+      await sendControl(`START|${name}|${interval}|${duration}`);
       toast('Sesja uruchomiona: ' + name, 'ok');
     } catch (err) {
       toast('Nie udało się uruchomić sesji: ' + err.message, 'bad');
