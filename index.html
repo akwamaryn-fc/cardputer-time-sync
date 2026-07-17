@@ -3,14 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Synchronizacja czasu - Cardputer</title>
+<title>Cardputer BioLogger - zdalne sterowanie</title>
 <style>
   :root {
     --bg: #0a0e14;
     --bg-glow: #101826;
     --panel: #131a24;
+    --panel-2: #1a2330;
     --accent: #00e5ff;
     --accent-dim: #0891a8;
+    --accent2: #ff9d3d;
     --text: #ffffff;
     --text-dim: #8899a6;
     --divider: rgba(255,255,255,0.08);
@@ -20,29 +22,25 @@
   }
   @media (prefers-color-scheme: light) {
     :root {
-      --bg: #eef1f5;
-      --bg-glow: #ffffff;
-      --panel: #ffffff;
-      --accent: #0891a8;
-      --accent-dim: #00c2dd;
-      --text: #10161f;
-      --text-dim: #5b6976;
-      --divider: rgba(16,22,31,0.08);
-      --ok: #15803d;
-      --bad: #dc2626;
-      --btn-ink: #ffffff;
+      --bg: #eef1f5; --bg-glow: #ffffff; --panel: #ffffff; --panel-2: #f3f5f8;
+      --accent: #0891a8; --accent-dim: #00c2dd; --accent2: #c2660a;
+      --text: #10161f; --text-dim: #5b6976; --divider: rgba(16,22,31,0.08);
+      --ok: #15803d; --bad: #dc2626; --btn-ink: #ffffff;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #0a0e14; --bg-glow: #101826; --panel: #131a24; --accent: #00e5ff;
-    --accent-dim: #0891a8; --text: #ffffff; --text-dim: #8899a6;
-    --divider: rgba(255,255,255,0.08); --ok: #22c55e; --bad: #ef4444; --btn-ink: #001318;
+    --bg: #0a0e14; --bg-glow: #101826; --panel: #131a24; --panel-2: #1a2330;
+    --accent: #00e5ff; --accent-dim: #0891a8; --accent2: #ff9d3d;
+    --text: #ffffff; --text-dim: #8899a6; --divider: rgba(255,255,255,0.08);
+    --ok: #22c55e; --bad: #ef4444; --btn-ink: #001318;
   }
   :root[data-theme="light"] {
-    --bg: #eef1f5; --bg-glow: #ffffff; --panel: #ffffff; --accent: #0891a8;
-    --accent-dim: #00c2dd; --text: #10161f; --text-dim: #5b6976;
-    --divider: rgba(16,22,31,0.08); --ok: #15803d; --bad: #dc2626; --btn-ink: #ffffff;
+    --bg: #eef1f5; --bg-glow: #ffffff; --panel: #ffffff; --panel-2: #f3f5f8;
+    --accent: #0891a8; --accent-dim: #00c2dd; --accent2: #c2660a;
+    --text: #10161f; --text-dim: #5b6976; --divider: rgba(16,22,31,0.08);
+    --ok: #15803d; --bad: #dc2626; --btn-ink: #ffffff;
   }
+
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -50,174 +48,493 @@
     background: radial-gradient(circle at top, var(--bg-glow) 0%, var(--bg) 70%);
     color: var(--text);
     font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
+    padding: 20px 16px 40px;
   }
-  .card {
-    width: 100%;
-    max-width: 420px;
-    background: var(--panel);
-    border-radius: 20px;
-    padding: 28px 24px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-    text-align: center;
+  .wrap { max-width: 460px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 16px; }
+  header h1 { font-size: 1.15rem; margin: 0 0 2px; color: var(--accent); letter-spacing: 0.5px; }
+  header .subtitle { color: var(--text-dim); font-size: 0.8rem; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 10px; padding: 5px 12px; border-radius: 999px;
+    font-size: 0.78rem; font-weight: 600; background: var(--panel);
+    border: 1px solid var(--divider);
   }
-  h1 {
-    font-size: 1.25rem;
-    margin: 0 0 4px;
-    color: var(--accent);
-    letter-spacing: 0.5px;
-  }
-  .subtitle {
-    color: var(--text-dim);
-    font-size: 0.85rem;
-    margin-bottom: 20px;
-  }
-  .clock {
-    font-size: 2.1rem;
-    font-variant-numeric: tabular-nums;
+  .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+  .status-pill.connected .dot { background: var(--ok); }
+  .status-pill.connecting .dot { background: var(--accent2); }
+
+  button {
+    font-family: inherit;
+    border: none; border-radius: 12px; cursor: pointer;
     font-weight: 600;
-    margin: 12px 0 24px;
-    letter-spacing: 1px;
   }
-  button#syncBtn {
-    width: 100%;
-    padding: 16px;
-    font-size: 1.05rem;
-    font-weight: 600;
-    border: none;
-    border-radius: 14px;
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: 0.45; cursor: default; }
+
+  .btn-primary {
+    width: 100%; padding: 15px; font-size: 1rem;
     background: linear-gradient(135deg, var(--accent), var(--accent-dim));
     color: var(--btn-ink);
-    cursor: pointer;
-    transition: transform 0.1s ease;
   }
-  button#syncBtn:active { transform: scale(0.97); }
-  button#syncBtn:disabled { opacity: 0.5; }
-  button#syncBtn:focus-visible {
-    outline: 3px solid var(--accent);
-    outline-offset: 3px;
+  .btn-secondary {
+    padding: 11px 16px; font-size: 0.88rem;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--divider);
   }
-  #status {
-    margin-top: 18px;
-    min-height: 44px;
-    font-size: 0.9rem;
-    color: var(--text-dim);
-    white-space: pre-line;
+  .btn-danger { color: var(--bad); }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn-row button { flex: 1; min-width: 120px; }
+
+  .card {
+    background: var(--panel); border-radius: 16px; padding: 16px;
+    margin-bottom: 14px; border: 1px solid var(--divider);
   }
-  #status.ok { color: var(--ok); }
-  #status.bad { color: var(--bad); }
-  .hint {
-    margin-top: 22px;
-    padding-top: 16px;
-    border-top: 1px solid var(--divider);
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    line-height: 1.5;
-    text-align: left;
+  .card h2 {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-dim); margin: 0 0 12px;
   }
-  .hint b { color: var(--text); }
+
+  .tiles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .tile { background: var(--panel-2); border-radius: 12px; padding: 12px 8px; text-align: center; }
+  .tile .value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile .label { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+
+  .minmax { display: flex; justify-content: space-around; margin-top: 12px; font-size: 0.78rem; color: var(--text-dim); }
+  .minmax b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  .chart-block { margin-top: 14px; }
+  .chart-block .chart-title { font-size: 0.72rem; color: var(--text-dim); margin-bottom: 4px; display: flex; justify-content: space-between; }
+  canvas.chart { width: 100%; height: 70px; display: block; border-radius: 8px; background: var(--panel-2); }
+
+  .session-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .session-row .name { font-size: 1rem; font-weight: 700; }
+  .session-row .meta { font-size: 0.78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .session-empty { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 12px; }
+
+  input[type="text"], select {
+    width: 100%; padding: 11px 12px; border-radius: 10px;
+    border: 1px solid var(--divider); background: var(--panel-2); color: var(--text);
+    font-size: 0.9rem; font-family: inherit;
+  }
+  label.field { display: block; font-size: 0.75rem; color: var(--text-dim); margin: 10px 0 4px; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    z-index: 10;
+  }
+  .modal { background: var(--panel); border-radius: 16px; padding: 20px; width: 100%; max-width: 380px; }
+  .modal h3 { margin: 0 0 4px; font-size: 1rem; }
+  .modal .hint { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 4px; }
+  .hidden { display: none !important; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--divider); color: var(--text);
+    padding: 10px 18px; border-radius: 999px; font-size: 0.82rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+    max-width: 90vw; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+  #toast.ok { color: var(--ok); }
+  #toast.bad { color: var(--bad); }
+
+  .hint-block {
+    font-size: 0.75rem; color: var(--text-dim); line-height: 1.5; text-align: left;
+  }
+  .hint-block b { color: var(--text); }
 </style>
 </head>
 <body>
-  <div class="card">
+<div class="wrap">
+  <header>
     <h1>CARDPUTER &middot; BioLogger</h1>
-    <div class="subtitle">Synchronizacja zegara przez Bluetooth</div>
-    <div class="clock" id="clock">--:--:--</div>
-    <button id="syncBtn">Synchronizuj czas</button>
-    <div id="status">Nacisnij przycisk, aby wyslac aktualny czas telefonu do urzadzenia.</div>
-    <div class="hint">
-      <b>Zanim naciśniesz:</b><br>
-      1. Włącz Bluetooth w telefonie.<br>
-      2. Na Cardputerze wybierz w menu <b>„Synchronizuj czas (BLE)”</b>.<br>
-      3. Wybierz z listy urządzenie <b>CardputerBioLogger</b>.<br><br>
-      Strona wysyła tylko bieżącą datę/godzinę telefonu - nic więcej.
-      Działa w przeglądarce Chrome na Androidzie (Web Bluetooth).
+    <div class="subtitle">Zdalne sterowanie i podgląd</div>
+    <div class="status-pill" id="statusPill"><span class="dot"></span><span id="statusText">Rozłączono</span></div>
+  </header>
+
+  <div id="disconnectedView">
+    <div class="card">
+      <button class="btn-primary" id="connectBtn">Połącz z Cardputerem</button>
+      <div class="hint-block" style="margin-top:14px;">
+        1. Włącz Bluetooth w telefonie.<br>
+        2. Na Cardputerze wybierz w menu <b>„Połącz z telefonem”</b>.<br>
+        3. Naciśnij przycisk wyżej i wybierz <b>CardputerBioLogger</b> z listy.<br><br>
+        Po połączeniu czas urządzenia zsynchronizuje się automatycznie.
+        Działa w przeglądarce Chrome na Androidzie (Web Bluetooth).
+      </div>
     </div>
   </div>
 
+  <div id="connectedView" class="hidden">
+    <div class="card">
+      <h2>Bieżący odczyt</h2>
+      <div class="tiles">
+        <div class="tile"><div class="value" id="tileTemp">--</div><div class="label">st. C</div></div>
+        <div class="tile"><div class="value" id="tileHum">--</div><div class="label">wilgotność</div></div>
+        <div class="tile"><div class="value" id="tileBatt">--</div><div class="label">bateria</div></div>
+      </div>
+      <div class="minmax">
+        <div>Temp. min/max <b id="mmTemp">--</b></div>
+        <div>Wilg. min/max <b id="mmHum">--</b></div>
+      </div>
+
+      <div class="chart-block">
+        <div class="chart-title"><span>Temperatura</span><span id="chartTempNow">--</span></div>
+        <canvas class="chart" id="chartTemp" width="600" height="140"></canvas>
+      </div>
+      <div class="chart-block">
+        <div class="chart-title"><span>Wilgotność</span><span id="chartHumNow">--</span></div>
+        <canvas class="chart" id="chartHum" width="600" height="140"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sesja pomiarowa</h2>
+      <div id="sessionActiveBlock" class="hidden">
+        <div class="session-row">
+          <span class="name" id="sessionName">-</span>
+          <span class="meta" id="sessionMeta">-</span>
+        </div>
+        <button class="btn-secondary btn-danger" id="stopSessionBtn" style="width:100%;">Zakończ sesję</button>
+      </div>
+      <div id="sessionEmptyBlock">
+        <div class="session-empty">Brak aktywnej sesji - logowanie automatyczne działa wg ostatnich ustawień na urządzeniu.</div>
+        <button class="btn-primary" id="startSessionBtn">Start sesji</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Pomiar ręczny</h2>
+      <label class="field" for="descInput">Opis (opcjonalnie)</label>
+      <input type="text" id="descInput" maxlength="60" placeholder="np. brzeg strumienia, cień">
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn-primary" id="saveNowBtn" style="flex:2;">Zapisz pomiar teraz</button>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-secondary" id="resyncTimeBtn">Synchronizuj czas</button>
+      <button class="btn-secondary btn-danger" id="disconnectBtn">Rozłącz</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="startModalBackdrop">
+  <div class="modal">
+    <h3>Start sesji pomiarowej</h3>
+    <div class="hint">Zresetuje statystyki min/max i uruchomi logowanie automatyczne.</div>
+    <label class="field" for="sessionNameInput">Nazwa sesji</label>
+    <input type="text" id="sessionNameInput" maxlength="32">
+    <label class="field" for="intervalSelect">Interwał pomiarów</label>
+    <select id="intervalSelect">
+      <option value="30">30 sekund</option>
+      <option value="60">1 minuta</option>
+      <option value="120">2 minuty</option>
+      <option value="300" selected>5 minut</option>
+      <option value="600">10 minut</option>
+      <option value="900">15 minut</option>
+      <option value="1800">30 minut</option>
+      <option value="3600">60 minut</option>
+    </select>
+    <div class="btn-row" style="margin-top:18px;">
+      <button class="btn-secondary" id="startModalCancel">Anuluj</button>
+      <button class="btn-primary" id="startModalConfirm">Start</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
 <script>
-  const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-  const TIME_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+  const SERVICE_UUID    = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const TIME_CHAR_UUID  = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+  const CTRL_CHAR_UUID  = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+  const STAT_CHAR_UUID  = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
+  const SESS_CHAR_UUID  = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
 
-  const btn = document.getElementById('syncBtn');
-  const statusEl = document.getElementById('status');
-  const clockEl = document.getElementById('clock');
+  const MAX_POINTS = 60;
 
-  function pad(n) { return n.toString().padStart(2, '0'); }
+  let device = null;
+  let chars = {};
+  let tempPoints = [];
+  let humPoints = [];
 
-  // Czytelna postac, tylko do wyswietlenia uzytkownikowi.
-  function nowStringPretty() {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-           `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const el = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, '0');
+
+  function toast(msg, cls) {
+    const t = el('toast');
+    t.textContent = msg;
+    t.className = 'show' + (cls ? ' ' + cls : '');
+    clearTimeout(toast._h);
+    toast._h = setTimeout(() => { t.className = ''; }, 3000);
   }
 
-  // To faktycznie idzie przez BLE: 12 cyfr "RRMMDDGGMMSS", bez separatorow.
-  // ESP32 ma udokumentowany blad biblioteki BLE - getValue()/c_str()
-  // koruptuje pamiec dla wartosci dluzszych niz ok. 15 bajtow, a pelne
-  // "2026-07-16 22:07:57" (19 bajtow) powodowalo restart urzadzenia.
-  function nowStringCompact() {
+  function setStatusPill(state, text) {
+    const pill = el('statusPill');
+    pill.className = 'status-pill' + (state ? ' ' + state : '');
+    el('statusText').textContent = text;
+  }
+
+  function nowCompactString() {
     const d = new Date();
     return `${pad(d.getFullYear() % 100)}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
            `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
 
-  function tickClock() {
+  function defaultSessionName() {
     const d = new Date();
-    clockEl.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  }
-  setInterval(tickClock, 1000);
-  tickClock();
-
-  function setStatus(msg, cls) {
-    statusEl.textContent = msg;
-    statusEl.className = cls || '';
+    return `Sesja_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
   }
 
-  async function syncTime() {
+  // ------------------------------------------------------------------
+  //  Polaczenie
+  // ------------------------------------------------------------------
+
+  async function connect() {
     if (!navigator.bluetooth) {
-      setStatus('Ta przeglądarka nie obsługuje Web Bluetooth.\nUżyj Chrome na Androidzie.', 'bad');
+      toast('Ta przeglądarka nie obsługuje Web Bluetooth. Użyj Chrome na Androidzie.', 'bad');
       return;
     }
-
-    btn.disabled = true;
     try {
-      setStatus('Szukam urządzenia CardputerBioLogger...');
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [SERVICE_UUID] }],
-      });
+      setStatusPill('connecting', 'Łączenie...');
+      device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
 
-      setStatus('Łączenie...');
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService(SERVICE_UUID);
-      const characteristic = await service.getCharacteristic(TIME_CHAR_UUID);
 
-      // Cardputer nie odsyla zadnego potwierdzenia przez BLE (proba wysylania
-      // zwrotnej wartosci powodowala uszkodzenie pamieci na urzadzeniu).
-      // Za "sukces" uznajemy wiec to, ze zapis dotarl bez bledu - ostateczne
-      // potwierdzenie widac na ekranie samego Cardputera.
-      setStatus('Wysylanie czasu...');
-      const displayTime = nowStringPretty();
-      const data = new TextEncoder().encode(nowStringCompact());
-      if (characteristic.writeValueWithResponse) {
-        await characteristic.writeValueWithResponse(data);
-      } else {
-        await characteristic.writeValue(data);
-      }
+      chars.time = await service.getCharacteristic(TIME_CHAR_UUID);
+      chars.ctrl = await service.getCharacteristic(CTRL_CHAR_UUID);
+      chars.status = await service.getCharacteristic(STAT_CHAR_UUID);
+      chars.session = await service.getCharacteristic(SESS_CHAR_UUID);
 
-      setStatus('Wyslano!\n' + displayTime + '\nSprawdz na ekranie Cardputera, czy czas sie zaktualizowal.', 'ok');
-      device.gatt.disconnect();
+      await chars.status.startNotifications();
+      chars.status.addEventListener('characteristicvaluechanged', (e) => onStatus(e.target.value));
+
+      await chars.session.startNotifications();
+      chars.session.addEventListener('characteristicvaluechanged', (e) => onSession(e.target.value));
+
+      setStatusPill('connected', 'Połączono');
+      el('disconnectedView').classList.add('hidden');
+      el('connectedView').classList.remove('hidden');
+      tempPoints = [];
+      humPoints = [];
+
+      await syncTime(true);
+
+      // pobierz stan poczatkowy (nie czekamy na pierwsze notify)
+      try { onStatus(await chars.status.readValue()); } catch (e) {}
+      try { onSession(await chars.session.readValue()); } catch (e) {}
     } catch (err) {
-      setStatus('Nie udało się zsynchronizować:\n' + err.message, 'bad');
-    } finally {
-      btn.disabled = false;
+      setStatusPill('', 'Rozłączono');
+      if (err.name !== 'NotFoundError') toast('Nie udało się połączyć: ' + err.message, 'bad');
     }
   }
 
-  btn.addEventListener('click', syncTime);
+  function onDisconnected() {
+    setStatusPill('', 'Rozłączono');
+    el('disconnectedView').classList.remove('hidden');
+    el('connectedView').classList.add('hidden');
+    chars = {};
+    toast('Rozłączono z Cardputerem');
+  }
+
+  el('disconnectBtn').addEventListener('click', () => {
+    if (device && device.gatt.connected) device.gatt.disconnect();
+  });
+
+  el('connectBtn').addEventListener('click', connect);
+
+  // ------------------------------------------------------------------
+  //  Synchronizacja czasu (automatyczna po polaczeniu + recznie)
+  // ------------------------------------------------------------------
+
+  async function syncTime(silent) {
+    if (!chars.time) return;
+    try {
+      const data = new TextEncoder().encode(nowCompactString());
+      if (chars.time.writeValueWithResponse) await chars.time.writeValueWithResponse(data);
+      else await chars.time.writeValue(data);
+      if (!silent) toast('Czas zsynchronizowany', 'ok');
+    } catch (err) {
+      toast('Nie udało się zsynchronizować czasu: ' + err.message, 'bad');
+    }
+  }
+  el('resyncTimeBtn').addEventListener('click', () => syncTime(false));
+
+  // ------------------------------------------------------------------
+  //  Live status (odczyt binarny, 18 bajtow) + wykresy
+  // ------------------------------------------------------------------
+
+  function onStatus(dataView) {
+    if (!dataView || dataView.byteLength < 18) return;
+    const temp = dataView.getInt16(4, true) / 10;
+    const hum = dataView.getUint16(6, true) / 10;
+    const minTemp = dataView.getInt16(8, true) / 10;
+    const maxTemp = dataView.getInt16(10, true) / 10;
+    const minHum = dataView.getUint16(12, true) / 10;
+    const maxHum = dataView.getUint16(14, true) / 10;
+    const battery = dataView.getUint8(16);
+
+    el('tileTemp').textContent = temp.toFixed(1);
+    el('tileHum').textContent = Math.round(hum) + '%';
+    el('tileBatt').textContent = battery + '%';
+    el('mmTemp').textContent = `${minTemp.toFixed(1)} / ${maxTemp.toFixed(1)}`;
+    el('mmHum').textContent = `${Math.round(minHum)} / ${Math.round(maxHum)}%`;
+    el('chartTempNow').textContent = temp.toFixed(1) + ' st.C';
+    el('chartHumNow').textContent = Math.round(hum) + '%';
+
+    tempPoints.push(temp);
+    humPoints.push(hum);
+    if (tempPoints.length > MAX_POINTS) tempPoints.shift();
+    if (humPoints.length > MAX_POINTS) humPoints.shift();
+
+    drawChart(el('chartTemp'), tempPoints, getAccentColor());
+    drawChart(el('chartHum'), humPoints, getAccent2Color());
+  }
+
+  function onSession(dataView) {
+    if (!dataView) return;
+    const text = new TextDecoder().decode(dataView);
+    if (text && text.indexOf('|') >= 0) {
+      const [name, interval] = text.split('|');
+      el('sessionActiveBlock').classList.remove('hidden');
+      el('sessionEmptyBlock').classList.add('hidden');
+      el('sessionName').textContent = name;
+      el('sessionMeta').textContent = 'co ' + formatInterval(parseInt(interval, 10));
+    } else {
+      el('sessionActiveBlock').classList.add('hidden');
+      el('sessionEmptyBlock').classList.remove('hidden');
+    }
+  }
+
+  function formatInterval(s) {
+    if (s < 60) return s + ' s';
+    if (s < 3600) return Math.round(s / 60) + ' min';
+    return Math.round(s / 3600) + ' h';
+  }
+
+  function getAccentColor() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#00e5ff';
+  }
+  function getAccent2Color() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--accent2').trim() || '#ff9d3d';
+  }
+
+  function hexToRgba(hex, alpha) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function drawChart(canvas, points, color) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    if (points.length < 2) return;
+
+    let min = Math.min(...points), max = Math.max(...points);
+    if (min === max) { min -= 1; max += 1; }
+    const padY = (max - min) * 0.15;
+    min -= padY; max += padY;
+
+    const stepX = w / (points.length - 1);
+    const yFor = (v) => h - ((v - min) / (max - min)) * h;
+
+    ctx.strokeStyle = hexToRgba(color, 0.15);
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+      const gy = (h * i) / 3;
+      ctx.beginPath();
+      ctx.moveTo(0, gy);
+      ctx.lineTo(w, gy);
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(0, yFor(points[0]));
+    points.forEach((v, i) => ctx.lineTo(i * stepX, yFor(v)));
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.fillStyle = hexToRgba(color, 0.18);
+    ctx.fill();
+
+    ctx.beginPath();
+    points.forEach((v, i) => {
+      const x = i * stepX, y = yFor(v);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    const lastX = (points.length - 1) * stepX, lastY = yFor(points[points.length - 1]);
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  // ------------------------------------------------------------------
+  //  Sterowanie: start/stop sesji, zapis reczny
+  // ------------------------------------------------------------------
+
+  async function sendControl(cmd) {
+    if (!chars.ctrl) return;
+    const data = new TextEncoder().encode(cmd);
+    if (chars.ctrl.writeValueWithResponse) await chars.ctrl.writeValueWithResponse(data);
+    else await chars.ctrl.writeValue(data);
+  }
+
+  el('startSessionBtn').addEventListener('click', () => {
+    el('sessionNameInput').value = defaultSessionName();
+    el('startModalBackdrop').classList.remove('hidden');
+  });
+  el('startModalCancel').addEventListener('click', () => {
+    el('startModalBackdrop').classList.add('hidden');
+  });
+  el('startModalConfirm').addEventListener('click', async () => {
+    const name = el('sessionNameInput').value.trim() || defaultSessionName();
+    const interval = el('intervalSelect').value;
+    el('startModalBackdrop').classList.add('hidden');
+    try {
+      await sendControl(`START|${name}|${interval}`);
+      toast('Sesja uruchomiona: ' + name, 'ok');
+    } catch (err) {
+      toast('Nie udało się uruchomić sesji: ' + err.message, 'bad');
+    }
+  });
+
+  el('stopSessionBtn').addEventListener('click', async () => {
+    try {
+      await sendControl('STOP');
+      toast('Sesja zakończona');
+    } catch (err) {
+      toast('Błąd: ' + err.message, 'bad');
+    }
+  });
+
+  el('saveNowBtn').addEventListener('click', async () => {
+    const desc = el('descInput').value.trim();
+    try {
+      await sendControl(desc ? `SAVE|${desc}` : 'SAVE');
+      toast('Pomiar zapisany', 'ok');
+      el('descInput').value = '';
+    } catch (err) {
+      toast('Nie udało się zapisać pomiaru: ' + err.message, 'bad');
+    }
+  });
 </script>
 </body>
 </html>
