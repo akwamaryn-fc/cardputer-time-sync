@@ -396,6 +396,7 @@
     const minHum = dataView.getUint16(12, true) / 10;
     const maxHum = dataView.getUint16(14, true) / 10;
     const battery = dataView.getUint8(16);
+    const flags = dataView.getUint8(17);
     const remaining = dataView.getUint32(18, true);
 
     el('tileTemp').textContent = temp.toFixed(1);
@@ -406,6 +407,21 @@
     el('chartTempNow').textContent = temp.toFixed(1) + ' st.C';
     el('chartHumNow').textContent = Math.round(hum) + '%';
 
+    // Bit0 z pakietu statusu (przychodzi co ~2s) to wiarygodne, samo-naprawiajace
+    // sie zrodlo prawdy o tym, czy sesja trwa - w odroznieniu od osobnego
+    // powiadomienia o nazwie sesji, ktore moglo nie dotrzec (np. gdy sesja
+    // zakonczyla sie sama, bez udzialu telefonu).
+    const activeNow = (flags & 0x01) !== 0;
+    if (activeNow !== sessionActive) {
+      sessionActive = activeNow;
+      if (sessionActive) {
+        el('sessionActiveBlock').classList.remove('hidden');
+        el('sessionEmptyBlock').classList.add('hidden');
+      } else {
+        el('sessionActiveBlock').classList.add('hidden');
+        el('sessionEmptyBlock').classList.remove('hidden');
+      }
+    }
     updateSessionMeta(remaining);
 
     tempPoints.push(temp);
@@ -557,6 +573,10 @@
   el('stopSessionBtn').addEventListener('click', async () => {
     try {
       await sendControl('STOP');
+      // aktualizacja od razu, nie czekamy na powiadomienie zwrotne
+      sessionActive = false;
+      el('sessionActiveBlock').classList.add('hidden');
+      el('sessionEmptyBlock').classList.remove('hidden');
       toast('Sesja zakończona');
     } catch (err) {
       toast('Błąd: ' + err.message, 'bad');
