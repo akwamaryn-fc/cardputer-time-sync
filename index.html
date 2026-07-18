@@ -117,6 +117,10 @@
   .tiles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
   .tile { background: var(--panel-2); border-radius: 12px; padding: 12px 8px; text-align: center; }
   .tile .value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile.low-batt .value { color: var(--bad); animation: recPulse 1.2s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .tile.low-batt .value { animation: none; }
+  }
   .tile .label { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
   .trend-icon { font-size: 0.85rem; margin-left: 3px; vertical-align: middle; }
   .trend-icon.up { color: var(--ok); }
@@ -197,7 +201,7 @@
       <div class="tiles">
         <div class="tile"><div class="value"><span id="tileTemp">--</span><span class="trend-icon" id="tempTrendIcon"></span></div><div class="label">st. C</div></div>
         <div class="tile"><div class="value"><span id="tileHum">--</span><span class="trend-icon" id="humTrendIcon"></span></div><div class="label">wilgotność</div></div>
-        <div class="tile"><div class="value" id="tileBatt">--</div><div class="label">bateria</div></div>
+        <div class="tile" id="tileBattWrap"><div class="value" id="tileBatt">--</div><div class="label">bateria</div></div>
       </div>
       <div class="minmax">
         <div>Temp. min/max <b id="mmTemp">--</b></div>
@@ -407,6 +411,7 @@
   const SESSION_NO_LIMIT = 0xFFFFFFFF;
   let sessionActive = false;
   let sessionIntervalS = 0;
+  let lowBatteryWarned = false;
 
   function onStatus(dataView, isInitialRead) {
     if (!dataView || dataView.byteLength < 22) return;
@@ -448,6 +453,17 @@
     // Bit2 = auto-logowanie faktycznie dziala (sesja albo zwykle auto-log) -
     // pulsujacy wskaznik REC, ten sam sygnal co "kropka REC" na Cardputerze.
     el('recBadge').classList.toggle('hidden', (flags & 0x04) === 0);
+
+    // Bit3 = bateria <= LOW_BATTERY_PCT (config.h) - ten sam prog co pulsujacy
+    // wskaznik na ekranie Cardputera. Tutaj dodatkowo jednorazowy toast przy
+    // przejsciu w stan niskiej baterii, zeby bylo widac to od razu po
+    // polaczeniu (glowny kanal sprawdzania stanu przy urzadzeniu bez nadzoru).
+    const lowBattery = (flags & 0x08) !== 0;
+    el('tileBattWrap').classList.toggle('low-batt', lowBattery);
+    if (lowBattery && !lowBatteryWarned) {
+      toast('Niska bateria: ' + battery + '%', 'bad');
+    }
+    lowBatteryWarned = lowBattery;
 
     // Pierwszy odczyt zaraz po polaczeniu to migawka sprzed nieznanego czasu
     // (tyle ile stalo okno "Polacz" zanim faktycznie nacisnieto przycisk) -
