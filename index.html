@@ -361,7 +361,7 @@
       await syncTime(true);
 
       // pobierz stan poczatkowy (nie czekamy na pierwsze notify)
-      try { onStatus(await chars.status.readValue()); } catch (e) {}
+      try { onStatus(await chars.status.readValue(), true); } catch (e) {}
       try { onSession(await chars.session.readValue()); } catch (e) {}
     } catch (err) {
       setStatusPill('', 'Rozłączono');
@@ -408,7 +408,7 @@
   let sessionActive = false;
   let sessionIntervalS = 0;
 
-  function onStatus(dataView) {
+  function onStatus(dataView, isInitialRead) {
     if (!dataView || dataView.byteLength < 22) return;
     const temp = dataView.getInt16(4, true) / 10;
     const hum = dataView.getUint16(6, true) / 10;
@@ -449,19 +449,27 @@
     // pulsujacy wskaznik REC, ten sam sygnal co "kropka REC" na Cardputerze.
     el('recBadge').classList.toggle('hidden', (flags & 0x04) === 0);
 
-    // Trend liczony PRZED dopisaniem nowej wartosci - porownanie do proby
-    // sprzed ~5 pakietow (status przychodzi co ~2s, wiec ~10s wstecz, tak
-    // samo jak na ekranie Cardputera).
-    el('tempTrendIcon').innerHTML = trendSymbol(calcTrend(tempPoints, temp, 0.2));
-    el('humTrendIcon').innerHTML = trendSymbol(calcTrend(humPoints, hum, 1.0));
+    // Pierwszy odczyt zaraz po polaczeniu to migawka sprzed nieznanego czasu
+    // (tyle ile stalo okno "Polacz" zanim faktycznie nacisnieto przycisk) -
+    // dolozenie go do wykresu jako "pierwszy punkt" tworzylo falszywy skok,
+    // bo wykres traktuje kolejne punkty jako rownomiernie rozlozone w czasie
+    // (co ~2s). Uzywamy go wiec tylko do kafelkow/liczby, a historia
+    // wykresu zaczyna sie dopiero od pierwszego prawdziwego powiadomienia.
+    if (!isInitialRead) {
+      // Trend liczony PRZED dopisaniem nowej wartosci - porownanie do proby
+      // sprzed ~5 pakietow (status przychodzi co ~2s, wiec ~10s wstecz, tak
+      // samo jak na ekranie Cardputera).
+      el('tempTrendIcon').innerHTML = trendSymbol(calcTrend(tempPoints, temp, 0.2));
+      el('humTrendIcon').innerHTML = trendSymbol(calcTrend(humPoints, hum, 1.0));
 
-    tempPoints.push(temp);
-    humPoints.push(hum);
-    if (tempPoints.length > MAX_POINTS) tempPoints.shift();
-    if (humPoints.length > MAX_POINTS) humPoints.shift();
+      tempPoints.push(temp);
+      humPoints.push(hum);
+      if (tempPoints.length > MAX_POINTS) tempPoints.shift();
+      if (humPoints.length > MAX_POINTS) humPoints.shift();
 
-    drawChart(el('chartTemp'), tempPoints, getAccentColor());
-    drawChart(el('chartHum'), humPoints, getAccent2Color());
+      drawChart(el('chartTemp'), tempPoints, getAccentColor(), ' st.C');
+      drawChart(el('chartHum'), humPoints, getAccent2Color(), '%');
+    }
   }
 
   function calcTrend(points, latest, deadband) {
@@ -535,7 +543,11 @@
     return `rgba(${r},${g},${b},${alpha})`;
   }
 
-  function drawChart(canvas, points, color) {
+  function getTextDimColor() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--text-dim').trim() || '#8899a6';
+  }
+
+  function drawChart(canvas, points, color, unit) {
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
@@ -558,6 +570,16 @@
       ctx.lineTo(w, gy);
       ctx.stroke();
     }
+
+    // Delikatna skala - wartosci gornej i dolnej granicy widocznego zakresu
+    // (nie samego min/max punktow, zeby pasowaly do siatki z paddingiem).
+    ctx.font = '600 10px -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = hexToRgba(getTextDimColor(), 0.85);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText(max.toFixed(1) + (unit || ''), w - 4, 3);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(min.toFixed(1) + (unit || ''), w - 4, h - 3);
 
     ctx.beginPath();
     ctx.moveTo(0, yFor(points[0]));
