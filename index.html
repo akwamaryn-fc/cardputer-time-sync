@@ -139,6 +139,26 @@
   .session-row .meta { font-size: 0.78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
   .session-empty { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 12px; }
 
+  .file-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid var(--divider);
+  }
+  .file-row:last-child { border-bottom: none; }
+  .file-row .file-info { min-width: 0; }
+  .file-row .file-name { font-size: 0.88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-row .file-meta { font-size: 0.72rem; color: var(--text-dim); margin-top: 1px; }
+  .file-row .file-meta .live-tag { color: var(--ok); font-weight: 700; }
+  .file-row button { flex-shrink: 0; padding: 8px 14px; font-size: 0.8rem; }
+  .file-empty { color: var(--text-dim); font-size: 0.85rem; }
+
+  .xfer-progress { margin-top: 4px; }
+  .xfer-progress .xfer-label {
+    display: flex; justify-content: space-between; font-size: 0.78rem;
+    color: var(--text-dim); margin-bottom: 6px;
+  }
+  .xfer-bar { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+  .xfer-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-dim)); transition: width 0.2s ease; }
+
   input[type="text"], select {
     width: 100%; padding: 11px 12px; border-radius: 10px;
     border: 1px solid var(--divider); background: var(--panel-2); color: var(--text);
@@ -242,6 +262,22 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>Logi na karcie SD <span id="fileXferBadge" class="rec-badge hidden"><span class="rec-dot"></span>POBIERANIE</span></h2>
+      <div id="fileListEmpty" class="file-empty">Wczytywanie listy...</div>
+      <div id="fileListRows"></div>
+      <div id="fileXferProgress" class="xfer-progress hidden">
+        <div class="xfer-label"><span id="xferFileName">-</span><span id="xferPct">0%</span></div>
+        <div class="xfer-bar"><div class="xfer-bar-fill" id="xferBarFill"></div></div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn-secondary btn-danger" id="cancelXferBtn" style="width:100%;">Anuluj pobieranie</button>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn-secondary" id="refreshLogsBtn" style="width:100%;">Odśwież listę</button>
+      </div>
+    </div>
+
     <div class="btn-row">
       <button class="btn-secondary" id="resyncTimeBtn">Synchronizuj czas</button>
       <button class="btn-secondary btn-danger" id="disconnectBtn">Rozłącz</button>
@@ -292,11 +328,21 @@
   const CTRL_CHAR_UUID  = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
   const STAT_CHAR_UUID  = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
   const SESS_CHAR_UUID  = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
+  const FILELIST_CHAR_UUID = "6e400006-b5a3-f393-e0a9-e50e24dcca9e";
+  const FILEXFER_CHAR_UUID = "6e400007-b5a3-f393-e0a9-e50e24dcca9e";
 
   const MAX_POINTS = 60;
 
   let device = null;
   let chars = {};
+
+  // Stan transferu pliku (patrz protokol w ble_sync.h: paczki 0x01 START /
+  // 0x02 DATA / 0x03 END / 0x04 ERROR). Zaklada niezawodne, w kolejnosci
+  // dostarczanie notyfikacji BLE w ramach jednego polaczenia (gwarantowane
+  // przez warstwe ATT/L2CAP dopoki nie ma rozlaczenia) - jedynym realnym
+  // zrodlem bledu jest rozlaczenie w trakcie transferu, obslugiwane w
+  // onDisconnected().
+  let xfer = null; // { filename, totalSize, receivedBytes, chunks: [Uint8Array,...] }
   let tempPoints = [];
   let humPoints = [];
 
@@ -349,6 +395,8 @@
       chars.ctrl = await service.getCharacteristic(CTRL_CHAR_UUID);
       chars.status = await service.getCharacteristic(STAT_CHAR_UUID);
       chars.session = await service.getCharacteristic(SESS_CHAR_UUID);
+      chars.filelist = await service.getCharacteristic(FILELIST_CHAR_UUID);
+      chars.filexfer = await service.getCharacteristic(FILEXFER_CHAR_UUID);
 
       await chars.status.startNotifications();
       chars.status.addEventListener('characteristicvaluechanged', (e) => onStatus(e.target.value));
@@ -356,17 +404,25 @@
       await chars.session.startNotifications();
       chars.session.addEventListener('characteristicvaluechanged', (e) => onSession(e.target.value));
 
+      await chars.filelist.startNotifications();
+      chars.filelist.addEventListener('characteristicvaluechanged', (e) => onFileList(e.target.value));
+
+      await chars.filexfer.startNotifications();
+      chars.filexfer.addEventListener('characteristicvaluechanged', (e) => onFileXfer(e.target.value));
+
       setStatusPill('connected', 'Połączono');
       el('disconnectedView').classList.add('hidden');
       el('connectedView').classList.remove('hidden');
       tempPoints = [];
       humPoints = [];
+      xfer = null;
 
       await syncTime(true);
 
       // pobierz stan poczatkowy (nie czekamy na pierwsze notify)
       try { onStatus(await chars.status.readValue(), true); } catch (e) {}
       try { onSession(await chars.session.readValue()); } catch (e) {}
+      try { await sendControl('LISTLOGS'); } catch (e) {}
     } catch (err) {
       setStatusPill('', 'Rozłączono');
       if (err.name !== 'NotFoundError') toast('Nie udało się połączyć: ' + err.message, 'bad');
@@ -378,7 +434,13 @@
     el('disconnectedView').classList.remove('hidden');
     el('connectedView').classList.add('hidden');
     chars = {};
-    toast('Rozłączono z Cardputerem');
+    if (xfer) {
+      xfer = null;
+      hideXferProgress();
+      toast('Rozłączono - pobieranie przerwane', 'bad');
+    } else {
+      toast('Rozłączono z Cardputerem');
+    }
   }
 
   el('disconnectBtn').addEventListener('click', () => {
@@ -676,6 +738,161 @@
     } catch (err) {
       toast('Nie udało się zapisać pomiaru: ' + err.message, 'bad');
     }
+  });
+
+  // ------------------------------------------------------------------
+  //  Logi na karcie SD: lista plikow + pobieranie (BLE_FILELIST/FILEXFER)
+  // ------------------------------------------------------------------
+
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  function onFileList(dataView) {
+    if (!dataView) return;
+    const text = new TextDecoder().decode(dataView);
+    const rows = el('fileListRows');
+    rows.innerHTML = '';
+    const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+
+    if (lines.length === 0) {
+      el('fileListEmpty').classList.remove('hidden');
+      el('fileListEmpty').textContent = 'Brak plików logu na karcie.';
+      return;
+    }
+    el('fileListEmpty').classList.add('hidden');
+
+    for (const line of lines) {
+      const [name, sizeStr] = line.split('|');
+      if (!name) continue;
+      const size = parseInt(sizeStr, 10) || 0;
+      const isLive = sessionActive && name === (el('sessionName').textContent + '.csv');
+
+      const row = document.createElement('div');
+      row.className = 'file-row';
+      row.innerHTML = `
+        <div class="file-info">
+          <div class="file-name">${name}</div>
+          <div class="file-meta">${formatBytes(size)}${isLive ? ' &middot; <span class="live-tag">TRWA SESJA</span>' : ''}</div>
+        </div>
+        <button class="btn-secondary" data-filename="${name}">Pobierz</button>
+      `;
+      row.querySelector('button').addEventListener('click', () => startFileDownload(name));
+      rows.appendChild(row);
+    }
+  }
+
+  function showXferProgress(filename) {
+    el('xferFileName').textContent = filename;
+    el('xferPct').textContent = '0%';
+    el('xferBarFill').style.width = '0%';
+    el('fileXferProgress').classList.remove('hidden');
+    el('fileXferBadge').classList.remove('hidden');
+  }
+
+  function hideXferProgress() {
+    el('fileXferProgress').classList.add('hidden');
+    el('fileXferBadge').classList.add('hidden');
+  }
+
+  async function startFileDownload(filename) {
+    if (xfer) {
+      toast('Poczekaj na zakończenie bieżącego pobierania', 'bad');
+      return;
+    }
+    xfer = { filename, totalSize: 0, receivedBytes: 0, chunks: [] };
+    showXferProgress(filename);
+    try {
+      await sendControl(`GETFILE|${filename}`);
+    } catch (err) {
+      xfer = null;
+      hideXferProgress();
+      toast('Nie udało się rozpocząć pobierania: ' + err.message, 'bad');
+    }
+  }
+
+  function finishFileDownload() {
+    if (!xfer) return;
+    const blob = new Blob(xfer.chunks, { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = xfer.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('Pobrano: ' + xfer.filename, 'ok');
+    xfer = null;
+    hideXferProgress();
+  }
+
+  function onFileXfer(dataView) {
+    if (!dataView || dataView.byteLength < 1) return;
+    const msgType = dataView.getUint8(0);
+
+    if (msgType === 0x01) { // START
+      if (dataView.byteLength < 5) return;
+      if (!xfer) return; // powiadomienie bez wczesniejszego GETFILE z tej strony - ignorujemy
+      xfer.totalSize = dataView.getUint32(1, true);
+      if (xfer.totalSize === 0) {
+        // pusty plik - od razu koniec, bez oczekiwania na paczki DATA/END
+        finishFileDownload();
+      }
+      return;
+    }
+
+    if (msgType === 0x02) { // DATA
+      if (!xfer) return;
+      const bytes = new Uint8Array(dataView.buffer, dataView.byteOffset + 1, dataView.byteLength - 1);
+      xfer.chunks.push(bytes);
+      xfer.receivedBytes += bytes.length;
+      const pct = xfer.totalSize > 0 ? Math.min(100, Math.round((xfer.receivedBytes / xfer.totalSize) * 100)) : 0;
+      el('xferPct').textContent = pct + '%';
+      el('xferBarFill').style.width = pct + '%';
+      return;
+    }
+
+    if (msgType === 0x03) { // END
+      if (!xfer) return;
+      if (xfer.totalSize > 0 && xfer.receivedBytes !== xfer.totalSize) {
+        toast('Transfer niekompletny (otrzymano ' + formatBytes(xfer.receivedBytes) +
+              ' z ' + formatBytes(xfer.totalSize) + ') - spróbuj ponownie', 'bad');
+        xfer = null;
+        hideXferProgress();
+        return;
+      }
+      finishFileDownload();
+      return;
+    }
+
+    if (msgType === 0x04) { // ERROR
+      const code = dataView.byteLength > 1 ? dataView.getUint8(1) : 0;
+      const reason = code === 1 ? 'nie znaleziono pliku' : 'błąd odczytu karty SD';
+      toast('Błąd pobierania: ' + reason, 'bad');
+      xfer = null;
+      hideXferProgress();
+      return;
+    }
+  }
+
+  el('refreshLogsBtn').addEventListener('click', async () => {
+    try {
+      await sendControl('LISTLOGS');
+    } catch (err) {
+      toast('Nie udało się odświeżyć listy: ' + err.message, 'bad');
+    }
+  });
+
+  el('cancelXferBtn').addEventListener('click', async () => {
+    xfer = null;
+    hideXferProgress();
+    try {
+      await sendControl('CANCELFILE');
+    } catch (err) {}
+    toast('Pobieranie anulowane');
   });
 </script>
 </body>
